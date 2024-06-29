@@ -1,2 +1,119 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+import pandas as pd
+from scipy.stats import ttest_ind
+
+# Load the CSV files
+applicants = pd.read_csv('./applicants.csv')
+sessions = pd.read_csv('./sessions.csv')
+events = pd.read_csv('./events.csv')
+
+# Convert date columns to datetime with flexible parsing
+events['event_datetime'] = pd.to_datetime(events['event_datetime'], errors='coerce')
+
+# Define the change date with timezone handling
+change_date = pd.Timestamp('2259-03-15', tz='UTC')
+
+# Filter events related to underwriting completion and form submission
+completion_events = events[events['event_type'] == 'end_of_underwriting']
+submission_events = events[events['event_type'] == 'Ally submitted test results']
+
+# Merge the completion and submission events to calculate the time difference
+merged_events = completion_events.merge(submission_events, on='session_id', suffixes=('_completion', '_submission'))
+
+# Ensure both datetime columns are in the same timezone
+merged_events['event_datetime_completion'] = merged_events['event_datetime_completion'].dt.tz_convert('UTC')
+merged_events['event_datetime_submission'] = merged_events['event_datetime_submission'].dt.tz_convert('UTC')
+
+# Calculate the time difference in minutes
+merged_events['time_to_submit'] = (merged_events['event_datetime_submission'] - merged_events['event_datetime_completion']).dt.total_seconds() / 60.0
+
+# Separate data before and after the change
+before_change = merged_events[merged_events['event_datetime_completion'] < change_date]
+after_change = merged_events[merged_events['event_datetime_completion'] >= change_date]
+
+# Handle any rows with missing or erroneous datetime values
+before_change = before_change.dropna(subset=['time_to_submit'])
+after_change = after_change.dropna(subset=['time_to_submit'])
+
+# Calculate the average time to submit before and after the change
+avg_time_before = before_change['time_to_submit'].mean()
+avg_time_after = after_change['time_to_submit'].mean()
+
+print(f"Average time to submit before change: {avg_time_before} minutes")
+print(f"Average time to submit after change: {avg_time_after} minutes")
+
+# Perform a statistical test to see if the difference is significant
+t_stat, p_value = ttest_ind(before_change['time_to_submit'], after_change['time_to_submit'])
+
+print(f"T-statistic: {t_stat}, P-value: {p_value}")
+
+# Draw conclusions
+if p_value < 0.05:
+    conclusion = "The change has significantly reduced the time to submit the test results form."
+else:
+    conclusion = "The change has not significantly reduced the time to submit the test results form."
+
+print(conclusion)
+
+
+with open('./analysis_code.docx', 'w') as f:
+    f.write("""
+    # My code
+    import pandas as pd
+from scipy.stats import ttest_ind
+
+# Load the CSV files
+applicants = pd.read_csv('./applicants.csv')
+sessions = pd.read_csv('./sessions.csv')
+events = pd.read_csv('./events.csv')
+
+# Convert date columns to datetime with flexible parsing
+events['event_datetime'] = pd.to_datetime(events['event_datetime'], errors='coerce')
+
+# Define the change date with timezone handling
+change_date = pd.Timestamp('2259-03-15', tz='UTC')
+
+# Filter events related to underwriting completion and form submission
+completion_events = events[events['event_type'] == 'end_of_underwriting']
+submission_events = events[events['event_type'] == 'Ally submitted test results']
+
+# Merge the completion and submission events to calculate the time difference
+merged_events = completion_events.merge(submission_events, on='session_id', suffixes=('_completion', '_submission'))
+
+# Ensure both datetime columns are in the same timezone
+merged_events['event_datetime_completion'] = merged_events['event_datetime_completion'].dt.tz_convert('UTC')
+merged_events['event_datetime_submission'] = merged_events['event_datetime_submission'].dt.tz_convert('UTC')
+
+# Calculate the time difference in minutes
+merged_events['time_to_submit'] = (merged_events['event_datetime_submission'] - merged_events['event_datetime_completion']).dt.total_seconds() / 60.0
+
+# Separate data before and after the change
+before_change = merged_events[merged_events['event_datetime_completion'] < change_date]
+after_change = merged_events[merged_events['event_datetime_completion'] >= change_date]
+
+# Handle any rows with missing or erroneous datetime values
+before_change = before_change.dropna(subset=['time_to_submit'])
+after_change = after_change.dropna(subset=['time_to_submit'])
+
+# Calculate the average time to submit before and after the change
+avg_time_before = before_change['time_to_submit'].mean()
+avg_time_after = after_change['time_to_submit'].mean()
+
+print(f"Average time to submit before change: {avg_time_before} minutes")
+print(f"Average time to submit after change: {avg_time_after} minutes")
+
+# Perform a statistical test to see if the difference is significant
+t_stat, p_value = ttest_ind(before_change['time_to_submit'], after_change['time_to_submit'])
+
+print(f"T-statistic: {t_stat}, P-value: {p_value}")
+
+# Draw conclusions
+if p_value < 0.05:
+    conclusion = "The change has significantly reduced the time to submit the test results form."
+else:
+    conclusion = "The change has not significantly reduced the time to submit the test results form."
+
+print(conclusion)
+    
+        # My conclusion
+
+    """ + conclusion)
